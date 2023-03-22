@@ -6,7 +6,7 @@ const tokens = (n) => {
 }
 
 describe('Token', ()=> {
-	let token, accounts, deployer, receiver, exchange
+	let token, accounts, deployer, receiver, exchange, sender
 
 	beforeEach(async () => {
 		// fetch Token from blockchain
@@ -18,6 +18,7 @@ describe('Token', ()=> {
 		deployer = accounts[0]
 		receiver = accounts[1]
 		exchange = accounts[2]
+		sender = accounts[3]
 	})
 
 	describe('Deployment', () => {
@@ -125,6 +126,81 @@ describe('Token', ()=> {
 			it('rejects invalid spenders', async () => {
 				await expect(token.connect(deployer).approve('0x0000000000000000000000000000000000000000', amount)).to.be.reverted
 			})
+		})
+
+	})
+
+
+	describe('Delegated Token Transfers', () => {
+		let amount, transaction, result
+
+		beforeEach(async () => {
+			amount = tokens(100)
+			transaction = await token.connect(deployer).approve(exchange.address, amount)
+			result = await transaction.wait()
+		})
+
+		describe('Success', () => {
+			// the transaction scenario is the exchange transfers from deployer to receiver
+			beforeEach(async () => {
+				transaction = await token.connect(exchange).transferFrom(deployer.address, receiver.address, amount)
+				result = await transaction.wait()
+			})
+
+			it('transfers token balances', async () => {
+				expect(await token.balanceOf(deployer.address)).to.be.equal(ethers.utils.parseUnits('99999900', 'ether'))
+				expect(await token.balanceOf(receiver.address)).to.be.equal(amount)
+			})
+
+			it('resets the allowance', async () => {
+				expect(await token.allowance(deployer.address, exchange.address)).to.equal(0)
+			})
+
+			it('emits Transfer event', async () => {
+				const event = result.events[0]
+				expect(event.event).to.equal('Transfer')
+
+				const args = event.args
+				expect(args.from).to.equal(deployer.address)
+				expect(args.to).to.equal(receiver.address)
+				expect(args.value).to.equal(amount)
+			})
+
+		})
+
+		describe('Failure', () => {
+			let senderBalance, approveAmount, transaction, result
+
+			beforeEach(async () => {
+
+				// sender account gives approval for 300 tokens
+				approveAmount = tokens(300)
+				transaction = await token.connect(sender).approve(exchange.address, approveAmount)
+				result = await transaction.wait()
+			})
+
+			it('rejects insufficient balances', async () => {
+				// set up the 'sender' address, with only 200 tokens
+				senderBalance = tokens(200)
+				transaction = await token.connect(deployer).transfer(sender.address, senderBalance)
+				result = await transaction.wait()
+
+				// try to spend 201, which is approved but not enough balance
+				const invalidAmount = tokens(201)
+				await expect(token.connect(exchange).transferFrom(sender.address, receiver.address, invalidAmount)).to.be.reverted
+			})
+
+			it('rejects insufficient approval amount', async () => {
+				// set up the 'sender' address, with 500 tokens
+				senderBalance = tokens(500)
+				transaction = await token.connect(deployer).transfer(sender.address, senderBalance)
+				result = await transaction.wait()
+
+				// try to spend 301, which is not approved even though sufficient balance
+				const notApprovedAmount = tokens(301)
+				await expect(token.connect(exchange).transferFrom(sender.address, receiver.address, notApprovedAmount)).to.be.reverted
+			})
+
 		})
 
 	})
