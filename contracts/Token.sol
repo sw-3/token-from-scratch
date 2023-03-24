@@ -9,13 +9,9 @@ contract Token {
 	uint8 public decimals = 18;
 	uint256 public totalSupply;
 
-	// NOTE: Solidity automatically creates a function called balanceOf
-	// 		because this is public. Given the address it returns value
 	mapping(address => uint256) public balanceOf;
 	mapping(address => mapping(address => uint256)) public allowance;
 
-	// NOTE: don't use underscores for event vars
-	// 		event output args look dumb with them
 	event Transfer(
 		address indexed from,
 		address indexed to,
